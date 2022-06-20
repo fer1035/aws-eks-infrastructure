@@ -1,0 +1,61 @@
+# Updated on March 25th, 2022 at 16:19 MYT.
+name: CICD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  usm:
+    name: USM
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v2
+      
+      - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-ky:  ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+        aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v2.0
+        id: install
+
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt -check
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color
+
+      - name: Terraform Apply
+        id: apply
+        run: terraform apply -auto-approve
+
+      - name: Deploy Application
+        id: application
+        run: |
+          aws eks --region $(terraform output -raw region) update-kubeconfig --name $(terraform output -raw cluster_name)
+          wget -O v0.3.6.tar.gz https://codeload.github.com/kubernetes-sigs/metrics-server/tar.gz/v0.3.6 && tar -xzf v0.3.6.tar.gz
+          kubectl apply -f metrics-server-0.3.6/deploy/1.8+/
+          kubectl get deployment metrics-server -n kube-system
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-beta8/aio/deploy/recommended.yaml
